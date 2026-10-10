@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Bilingual Translation Editor</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);--bg:#f6f5f1;--card:#fff;--tx:#1f1d1a;--mu:#7a756c;--bd:#e2ded6;--ac:#2f6f5e;--ac2:#e3f0eb;--wa:#b8741a;--ok:#2f7d4f}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#171614;--card:#211f1c;--tx:#ece9e2;--mu:#9a958a;--bd:#34312c;--ac:#6fc2a9;--ac2:#243a33;--wa:#e0a24d;--ok:#6fcf93}}
+:root[data-theme="dark"]{--bg:#171614;--card:#211f1c;--tx:#ece9e2;--mu:#9a958a;--bd:#34312c;--ac:#6fc2a9;--ac2:#243a33;--wa:#e0a24d;--ok:#6fcf93}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+header{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);border-bottom:1px solid var(--bd);padding:10px 14px}
+h1{font:600 17px/1.2 Georgia,serif;margin:0 0 8px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+select,input,textarea,button{font:inherit;color:var(--tx);background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:7px 10px}
+select{max-width:42vw}
+button{cursor:pointer}button:disabled{opacity:.45;cursor:default}
+button.p{background:var(--ac);border-color:var(--ac);color:var(--bg);font-weight:600}
+button.g{border:none;background:none;color:var(--ac);padding:4px 8px}
+.bar{height:5px;background:var(--bd);border-radius:3px;margin-top:8px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--ac);width:0;transition:width .3s}
+main{max-width:980px;margin:0 auto;padding:12px 14px 60px}
+.tabs{display:flex;gap:6px;margin-bottom:12px}
+.tabs button{flex:1}.tabs button.on{background:var(--ac2);border-color:var(--ac);color:var(--ac);font-weight:600}
+.seg{background:var(--card);border:1px solid var(--bd);border-radius:12px;margin-bottom:10px;padding:10px;display:grid;gap:8px}
+.seg.ok{border-left:4px solid var(--ok)}
+.seg .n{font-size:11px;color:var(--mu)}
+.src{white-space:pre-wrap;color:var(--tx)}
+textarea{width:100%;resize:vertical;min-height:64px}
+.tg{display:grid;gap:6px}
+.act{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.sm{font-size:13px;padding:4px 9px}
+.msg{font-size:13px;color:var(--wa);min-height:18px;margin:4px 0}
+.hint{color:var(--mu);font-size:13px}
+.gl{display:grid;grid-template-columns:1fr 1fr auto;gap:6px;margin-bottom:6px}
+.gl input{width:100%}
+@media(min-width:720px){.seg{grid-template-columns:1fr 1fr}.seg .n{grid-column:1/-1}}
+.pill{font-size:11px;padding:1px 8px;border-radius:10px;background:var(--ac2);color:var(--ac)}
+</style>
+</head>
+<body>
+<header>
+  <h1>Bilingual Translation Editor</h1>
+  <div class="row">
+    <select id="sl"></select><button id="sw" title="Swap" class="sm">⇄</button><select id="tl"></select>
+    <select id="tone"><option>neutral</option><option>formal</option><option>casual</option><option>technical</option><option>literary</option></select>
+  </div>
+  <div class="bar"><i id="pb"></i></div>
+  <div class="hint" id="pt" style="margin-top:4px"></div>
+</header>
+<main>
+  <div class="tabs"><button data-t="edit" class="on">Edit</button><button data-t="imp">Import</button><button data-t="gl">Glossary</button><button data-t="exp">Export</button></div>
+  <div class="msg" id="msg"></div>
+
+  <section id="v-edit">
+    <div class="row" style="margin-bottom:10px">
+      <button class="p" id="all">✨ Translate all empty</button>
+      <button id="okall">Confirm all</button>
+      <input id="q" placeholder="Search…" style="flex:1;min-width:120px">
+    </div>
+    <div id="list"></div>
+  </section>
+
+  <section id="v-imp" hidden>
+    <textarea id="raw" rows="9" placeholder="Paste source text here…"></textarea>
+    <div class="row" style="margin-top:8px">
+      <select id="mode"><option value="line">Split by line</option><option value="sent">Split by sentence</option></select>
+      <button class="p" id="split">Create segments</button>
+      <button id="sample">Load sample</button>
+    </div>
+    <p class="hint">Replaces the current segments. Everything is stored in this browser.</p>
+  </section>
+
+  <section id="v-gl" hidden>
+    <p class="hint">Terms listed here are sent to the AI so they're translated consistently.</p>
+    <div id="gll"></div>
+    <button id="gla">+ Add term</button>
+  </section>
+
+  <section id="v-exp" hidden>
+    <div class="row">
+      <button id="e1">Bilingual CSV</button><button id="e2">Target text (.txt)</button><button id="e3">Project (.json)</button>
+    </div>
+    <p class="hint">If saving isn't available, the content is copied to your clipboard.</p>
+  </section>
+</main>
+<script>
+const API_BASE = window.location.origin.startsWith('http://127.0.0.1') ? 'http://127.0.0.1:8000' : '';
+const LANGS = ["English","Hindi","Odia","Bengali","Tamil","Telugu","Marathi","Gujarati","Punjabi","Assamese","Kannada","Malayalam","Urdu","Nepali","Sanskrit","Spanish","French","German","Arabic","Italian","Portuguese","Dutch","Russian","Japanese","Korean","Chinese (Simplified)","Chinese (Traditional)","Turkish","Swedish","Polish","Romanian","Thai","Vietnamese"];
+const LANG_CODES = ["en","hi","or","bn","ta","te","mr","gu","pa","as","kn","ml","ur","ne","sa","es","fr","de","ar","it","pt","nl","ru","ja","ko","zh-cn","zh-tw","tr","sv","pl","ro","th","vi"];
+const SK="bte_v1";
+let S={src:"en",tgt:"hi",tone:"neutral",segs:[],gloss:[]};
+try{const r=localStorage.getItem(SK);if(r)S=Object.assign(S,JSON.parse(r))}catch(e){}
+const $=id=>document.getElementById(id);
+
+let busy=false;
+function save(){try{localStorage.setItem(SK,JSON.stringify(S))}catch(e){}}
+function say(t){$("msg").textContent=t||""}
+
+// Populate language selectors with native names
+async function populateLanguages(){
+  try {
+    const resp = await fetch(API_BASE + '/api/translation/languages');
+    const data = await resp.json();
+    const langs = data.languages || [];
+    window.LANG_OPTIONS = langs;
+    renderLangOpts();
+  } catch(e) {
+    window.LANG_OPTIONS = LANG_CODES.map((code,i)=>({code, name: LANGS[i], nativeName: LANGS[i]}));
+    renderLangOpts();
+  }
+}
+
+function renderLangOpts(){
+  const opts = window.LANG_OPTIONS || [];
+  const srcSel = $("sl"), tgtSel = $("tl");
+  srcSel.innerHTML = opts.map(l=>`<option value="${l.code}" ${l.code===S.src?" selected":""}>${l.nativeName || l.name}</option>`).join("");
+  tgtSel.innerHTML = opts.map(l=>`<option value="${l.code}" ${l.code===S.tgt?" selected":""}>${l.nativeName || l.name}</option>`).join("");
+}
+
+populateLanguages();
+opts($("sl"),S.src);opts($("tl"),S.tgt);$("tone").value=S.tone;
+$("sl").onchange=e=>{S.src=e.target.value;save()};
+$("tl").onchange=e=>{S.tgt=e.target.value;save()};
+$("tone").onchange=e=>{S.tone=e.target.value;save()};
+$("sw").onclick=()=>{[S.src,S.tgt]=[S.tgt,S.src];opts($("sl"),S.src);opts($("tl"),S.tgt);save()};
+
+function opts(el,v){
+  const opts = window.LANG_OPTIONS || [];
+  if(!opts.length) return;
+  el.innerHTML = opts.map(l=>`<option value="${l.code}" ${l.code===v?" selected":""}>${l.nativeName || l.name}</option>`).join("");
+}
+
+document.querySelectorAll(".tabs button").forEach(b=>b.onclick=()=>{
+  document.querySelectorAll(".tabs button").forEach(x=>x.classList.toggle("on",x===b));
+  for(const k of["edit","imp","gl","exp"])$("v-"+k).hidden=k!==b.dataset.t;say("")});
+
+function progress(){const n=S.segs.length,d=S.segs.filter(s=>s.ok).length;
+  $("pb").style.width=n?d/n*100+"%":"0";
+  $("pt").textContent=n?`${d}/${n} confirmed · ${S.segs.filter(s=>s.t).length} translated`:"No segments yet — use Import."}
+function esc(s){return s.replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
+function render(){
+  const q=$("q").value.toLowerCase(),L=$("list");
+  L.innerHTML="";
+  S.segs.forEach((s,i)=>{
+    if(q&&!(s.s+s.t).toLowerCase().includes(q))return;
+    const d=document.createElement("div");d.className="seg"+(s.ok?" ok":"");
+    d.innerHTML=`<div class="n">#${i+1} ${s.ok?'<span class="pill">confirmed</span>':""}</div>
+    <div class="src">${esc(s.s)}</div>
+    <div class="tg"><textarea rows="2" placeholder="Translation…">${esc(s.t)}</textarea>
+    <div class="act"><button class="sm p" data-a="ai">✨ AI</button><button class="sm" data-a="ok">${s.ok?"Unconfirm":"✓ Confirm"}</button><button class="sm" data-a="cl">Clear</button><button class="g sm" data-a="mg">Merge ↓</button></div></div>`;
+    const ta=d.querySelector("textarea");
+    ta.oninput=()=>{s.t=ta.value;if(s.ok){s.ok=false;render();return}save();progress()};
+    d.querySelectorAll("button").forEach(b=>b.onclick=async()=>{
+      const a=b.dataset.a;
+      if(a==="ok"){s.ok=!s.ok}
+      else if(a==="cl"){s.t="";s.ok=false}
+      else if(a==="mg"){const nx=S.segs[i+1];if(nx){s.s+=" "+nx.s;s.t=(s.t+" "+nx.t).trim();s.ok=false;S.segs.splice(i+1,1)}}
+      else if(a==="ai"){await run([i]);return}
+      save();render()});
+    L.appendChild(d)});
+  progress()}
+$("q").oninput=render;
+$("okall").onclick=()=>{S.segs.forEach(s=>{if(s.t)s.ok=true});save();render()};
+
+// Translation via backend API
+async function translateText(text){
+  try {
+    const resp = await fetch(API_BASE + '/api/translate', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({text: text, source_language: S.src, target_language: S.tgt})
+    });
+    if(!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    return data.translated_text;
+  } catch(e) {
+    throw new Error('Translation failed: ' + (e.message || 'error'));
+  }
+}
+
+async function run(idx){
+  if(busy)return;
+  busy=true;say("Translating…");
+  try {
+    for(let k=0;k<idx.length;k++){
+      const i=idx[k];
+      const txt = S.segs[i].s;
+      if(!txt.trim()) continue;
+      try {
+        const translated = await translateText(txt);
+        S.segs[i].t = translated || "";
+        S.segs[i].ok = false;
+        save();
+        render();
+        say(`Translating… ${k+1}/${idx.length}`);
+      } catch(e) {
+        say(e.message);
+      }
+    }
+    say("Done. Review and confirm each segment.");
+  } finally {
+    busy=false;
+  }
+}
+$("all").onclick=()=>{const idx=S.segs.map((s,i)=>s.t.trim()?-1:i).filter(i=>i>=0);
+  if(!idx.length){say("Nothing left to translate.");return}run(idx)};
+
+$("split").onclick=()=>{
+  const t=$("raw").value.trim();if(!t){say("Paste some text first.");return}
+  let parts=t.split(/\n+/).map(x=>x.trim()).filter(Boolean);
+  if($("mode").value==="sent")parts=parts.flatMap(p=>p.split(/(?<=[.!?。！？])\s+/)).filter(Boolean);
+  S.segs=parts.map(s=>({s,t:"",ok:false}));save();
+  document.querySelector('[data-t="edit"]').click();render();say(`${parts.length} segments created.`)};
+$("sample").onclick=()=>{$("raw").value="Welcome to our app. We're glad you're here.\nYour account has been created successfully.\nPlease check your email to verify your address.\nIf you didn't sign up, you can safely ignore this message."};
+
+function glr(){const g=$("gll");g.innerHTML="";
+  S.gloss.forEach((x,i)=>{const d=document.createElement("div");d.className="gl";
+    d.innerHTML=`<input placeholder="Term in ${S.src}" value="${esc(x.a)}"><input placeholder="Translation in ${S.tgt}" value="${esc(x.b)}"><button class="sm">✕</button>`;
+    const[a,b,r]=d.children;a.oninput=()=>{x.a=a.value;save()};b.oninput=()=>{x.b=b.value;save()};
+    r.onclick=()=>{S.gloss.splice(i,1);save();glr()};g.appendChild(d)})}
+$("gla").onclick=()=>{S.gloss.push({a:"",b:""});glr()};
+
+async function out(name,data){
+  try{
+    const blob=new Blob([data],{type:"text/plain"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+    a.href=url;
+    a.download=name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    say("Saved.");
+      }catch(e){say("Couldn't save.")}}
+const csv=v=>'"'+String(v).replace(/"/g,'""')+'"';
+$("e1").onclick=()=>out("translations.csv","\ufeff"+csv(S.src)+","+csv(S.tgt)+",status\n"+S.segs.map(s=>[csv(s.s),csv(s.t),s.ok?"confirmed":"draft"].join(",")).join("\n"));
+$("e2").onclick=()=>out("translation.txt",S.segs.map(s=>s.t).join("\n"));
+$("e3").onclick=()=>out("translation-project.json",JSON.stringify(S,null,2));
+
+glr();render();
+</script>
+</body>
+</html>
